@@ -55,10 +55,10 @@ Material:
     m_Ints: []
     m_Floats:
     - _EnableExternalAlpha: 0
-    - _FoamThickness: -10
+    - _FoamThickness: 1000
     - _QueueControl: 0
     - _QueueOffset: 0
-    - _Thickness: 0.95
+    - _Thickness: 0.75
     - _ZWrite: 0
     - _thickness: 0.75
     m_Colors:
