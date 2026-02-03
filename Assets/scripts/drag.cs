@@ -24,7 +24,6 @@ public class DragThrowRotate2D : MonoBehaviour
 
     private void OnMouseDown()
     {
-        rb.rotation = 0f;
         rb.linearVelocity = Vector2.zero;
         rb.angularVelocity = 0f;
         rb.freezeRotation = true;
