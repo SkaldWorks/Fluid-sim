@@ -1,19 +1,16 @@
 using UnityEngine;
 
-public class DragThrowRotate2D : MonoBehaviour
+[RequireComponent(typeof(Rigidbody2D))]
+public sealed class DragThrowRotate2D : MonoBehaviour
 {
     private Rigidbody2D rb;
     private Camera mainCamera;
 
     private bool isDragging;
-    private Vector2 targetPosition;
     private Vector2 lastMousePosition;
     private Vector2 throwVelocity;
 
-    [Header("Throw Settings")]
     [SerializeField] private float throwMultiplier = 4f;
-
-    [Header("Rotation Settings")]
     [SerializeField] private float rotateSpeed = 180f;
 
     private void Awake()
@@ -24,16 +21,13 @@ public class DragThrowRotate2D : MonoBehaviour
 
     private void OnMouseDown()
     {
-        rb.rotation = 0f;
         rb.linearVelocity = Vector2.zero;
         rb.angularVelocity = 0f;
         rb.freezeRotation = true;
 
         isDragging = true;
-
-        Vector2 mouseWorldPos = GetMouseWorldPosition();
-        targetPosition = mouseWorldPos;
-        lastMousePosition = mouseWorldPos;
+        lastMousePosition = GetMouseWorldPosition();
+        throwVelocity = Vector2.zero;
     }
 
     private void OnMouseUp()
@@ -47,32 +41,32 @@ public class DragThrowRotate2D : MonoBehaviour
     {
         if (!isDragging) return;
 
-        Vector2 mouseWorldPos = GetMouseWorldPosition();
-        targetPosition = mouseWorldPos;
+        Vector2 mousePos = GetMouseWorldPosition();
 
-        throwVelocity = (mouseWorldPos - lastMousePosition) / Time.deltaTime;
-        lastMousePosition = mouseWorldPos;
+        // Cache throw velocity once per frame (cheaper & more stable)
+        throwVelocity = (mousePos - lastMousePosition) / Time.deltaTime;
+        lastMousePosition = mousePos;
     }
 
     private void FixedUpdate()
     {
         if (!isDragging) return;
 
-        rb.MovePosition(targetPosition);
+        rb.MovePosition(lastMousePosition);
 
         float rotationInput = GetRotationInput();
-        if (rotationInput == 0f) return;
-
-        rb.MoveRotation(
-            rb.rotation + rotationInput * rotateSpeed * Time.fixedDeltaTime
-        );
+        if (rotationInput != 0f)
+        {
+            rb.MoveRotation(
+                rb.rotation + rotationInput * rotateSpeed * Time.fixedDeltaTime
+            );
+        }
     }
 
     private Vector2 GetMouseWorldPosition()
     {
         Vector3 pos = mainCamera.ScreenToWorldPoint(Input.mousePosition);
-        pos.z = 0f;
-        return pos;
+        return new Vector2(pos.x, pos.y);
     }
 
     private static float GetRotationInput()
