@@ -58,7 +58,7 @@ Material:
     - _FoamThickness: 1000
     - _QueueControl: 0
     - _QueueOffset: 0
-    - _Thickness: 0.75
+    - _Thickness: 0.99
     - _ZWrite: 0
     - _thickness: 0.75
     m_Colors:

@@ -1,9 +1,8 @@
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody2D), typeof(CircleCollider2D))]
-public class WaterParticle : MonoBehaviour
+public sealed class WaterParticle : MonoBehaviour
 {
-    [Header("Water Settings")]
     [SerializeField] private float stickDistance = 0.3f;
     [SerializeField] private float stickStrength = 5f;
     [SerializeField] private float maxVelocity = 5f;
@@ -11,21 +10,29 @@ public class WaterParticle : MonoBehaviour
 
     private Rigidbody2D rb;
     private Collider2D col;
-
-    private static readonly Collider2D[] overlapResults = new Collider2D[12];
-
+    private int instanceId;
     private int updateOffset;
+
+    private static readonly Collider2D[] overlapBuffer = new Collider2D[12];
+    private static ContactFilter2D contactFilter;
 
     private void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         col = GetComponent<Collider2D>();
+        instanceId = GetInstanceID();
 
         rb.linearDamping = 0.5f;
         rb.angularDamping = 0.5f;
 
-        // Spread work across frames
-        updateOffset = GetInstanceID() & 1;
+        updateOffset = instanceId & 1;
+
+        // Configure once — no allocations, no layer checks
+        contactFilter = new ContactFilter2D
+        {
+            useLayerMask = false,
+            useTriggers = true
+        };
     }
 
     private void FixedUpdate()
@@ -33,25 +40,31 @@ public class WaterParticle : MonoBehaviour
         if ((Time.frameCount & 1) != updateOffset)
             return;
 
-        // Use the new OverlapCircle API
-        Collider2D[] hits = Physics2D.OverlapCircleAll(
+        int hitCount = Physics2D.OverlapCircle(
             rb.position,
-            stickDistance
+            stickDistance,
+            contactFilter,
+            overlapBuffer
         );
 
-        int connections = 0;
-        float stickDistSqr = stickDistance * stickDistance;
+        if (hitCount == 0)
+            return;
 
-        for (int i = 0; i < hits.Length; i++)
+        float stickDistSqr = stickDistance * stickDistance;
+        Vector2 velocity = rb.linearVelocity;
+
+        int connections = 0;
+        Vector2 cohesionSum = Vector2.zero;
+
+        for (int i = 0; i < hitCount; i++)
         {
-            var otherCol = hits[i];
+            Collider2D otherCol = overlapBuffer[i];
             if (otherCol == col) continue;
 
             if (!otherCol.TryGetComponent(out WaterParticle other))
                 continue;
 
-            // Prevent double force application
-            if (other.GetInstanceID() <= GetInstanceID())
+            if (other.instanceId <= instanceId)
                 continue;
 
             Vector2 dir = other.rb.position - rb.position;
@@ -61,42 +74,25 @@ public class WaterParticle : MonoBehaviour
                 continue;
 
             connections++;
+            cohesionSum += dir;
 
             float dist = Mathf.Sqrt(distSqr);
-            float forceMag = (stickDistance - dist) * stickStrength;
-            Vector2 force = dir * (forceMag / dist) * Time.fixedDeltaTime;
+            float forceScale = (stickDistance - dist) * stickStrength / dist;
+            Vector2 force = dir * forceScale * Time.fixedDeltaTime;
 
-            rb.linearVelocity += force;
+            velocity += force;
             other.rb.linearVelocity -= force;
         }
 
-        if (connections < minConnections)
+        if (connections < minConnections && cohesionSum != Vector2.zero)
         {
-            Vector2 centerPull = Vector2.zero;
-
-            for (int i = 0; i < hits.Length; i++)
-            {
-                var otherCol = hits[i];
-                if (otherCol == col) continue;
-
-                if (!otherCol.TryGetComponent(out WaterParticle other))
-                    continue;
-
-                centerPull += (other.rb.position - rb.position);
-            }
-
-            if (centerPull != Vector2.zero)
-            {
-                rb.linearVelocity +=
-                    centerPull.normalized *
-                    stickStrength *
-                    0.4f *
-                    Time.fixedDeltaTime;
-            }
+            velocity +=
+                cohesionSum.normalized *
+                stickStrength *
+                0.4f *
+                Time.fixedDeltaTime;
         }
 
-        rb.linearVelocity = Vector2.ClampMagnitude(rb.linearVelocity, maxVelocity);
+        rb.linearVelocity = Vector2.ClampMagnitude(velocity, maxVelocity);
     }
-
 }
-

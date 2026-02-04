@@ -1,76 +1,80 @@
 using UnityEngine;
 
-public class SpawnWhenTilted : MonoBehaviour
+[RequireComponent(typeof(Transform))]
+public sealed class SpawnWhenTilted : MonoBehaviour
 {
     [Header("Spawn Settings")]
-    public GameObject prefabToSpawn;
-    public int spawnCount = 1;
-
-    [Tooltip("Fastest spawn rate (seconds) when fully upside-down")]
-    public float minSpawnInterval = 0.2f;
-
-    [Tooltip("Slowest spawn rate (seconds) when just past 45° tilt")]
-    public float maxSpawnInterval = 1.2f;
-
-    [Tooltip("How long spawned objects live before being destroyed")]
-    public float spawnedObjectLifetime = 4f;
+    [SerializeField] private GameObject prefabToSpawn;
+    [SerializeField] private int spawnCount = 1;
+    [SerializeField] private float minSpawnInterval = 0.2f;
+    [SerializeField] private float maxSpawnInterval = 1.2f;
+    [SerializeField] private float spawnedObjectLifetime = 4f;
 
     [Header("Tilt Thresholds (Degrees)")]
-    [Tooltip("Spawn outside this range: -uprightThreshold to uprightThreshold")]
-    public float uprightThreshold = 45f;
+    [SerializeField] private float uprightThreshold = 45f;
 
+    private Transform parentTransform;
     private float spawnTimer;
 
-    void Update()
+    // Cached constants
+    private float maxDistance;
+    private float invMaxDistance;
+
+    private void Awake()
     {
-        if (transform.parent == null)
+        parentTransform = transform.parent;
+
+        // Precompute constants (avoids recalculation every frame)
+        maxDistance = 180f - uprightThreshold;
+        invMaxDistance = 1f / maxDistance;
+    }
+
+    private void Update()
+    {
+        if (parentTransform == null)
             return;
 
-        // Get parent rotation normalized to -180 - 180
-        float currentZ = Mathf.DeltaAngle(0f, transform.parent.eulerAngles.z);
+        float z = parentTransform.eulerAngles.z;
+        z = z > 180f ? z - 360f : z; // Faster than Mathf.DeltaAngle
 
-        // Spawn when outside the upright threshold
-        if (currentZ > uprightThreshold || currentZ < -uprightThreshold)
+        float absZ = z >= 0f ? z : -z;
+
+        // Inside upright range -- no spawn
+        if (absZ <= uprightThreshold)
         {
-            spawnTimer += Time.deltaTime;
-
-            // Dynamic spawn speed: faster when closer to fully upside-down (180/-180)
-            float spawnInterval = CalculateDynamicSpawnInterval(currentZ);
-
-            if (spawnTimer >= spawnInterval)
-            {
-                SpawnPrefabs();
-                spawnTimer = 0f;
-            }
+            spawnTimer = 0f;
+            return;
         }
-        else
+
+        spawnTimer += Time.deltaTime;
+
+        // Distance from fully upside-down (180)
+        float distance = absZ >= 180f ? 0f : 180f - absZ;
+
+        // Normalize [0..1]
+        float t = distance * invMaxDistance;
+        t = t < 0f ? 0f : (t > 1f ? 1f : t);
+
+        // SmoothStep inline (faster than Mathf.SmoothStep)
+        t = t * t * (3f - 2f * t);
+
+        float spawnInterval = minSpawnInterval + (maxSpawnInterval - minSpawnInterval) * t;
+
+        if (spawnTimer >= spawnInterval)
         {
-            spawnTimer = 0f; // reset timer when within upright range
+            SpawnPrefabs();
+            spawnTimer = 0f;
         }
     }
 
-    void SpawnPrefabs()
+    private void SpawnPrefabs()
     {
+        Vector3 pos = transform.position;
+
         for (int i = 0; i < spawnCount; i++)
         {
-            GameObject spawned = Instantiate(prefabToSpawn, transform.position, Quaternion.identity);
-            Destroy(spawned, spawnedObjectLifetime);
+            GameObject obj = Instantiate(prefabToSpawn, pos, Quaternion.identity);
+            Destroy(obj, spawnedObjectLifetime);
         }
-    }
-
-    float CalculateDynamicSpawnInterval(float currentZ)
-    {
-        // Distance from fully upside-down
-        float distanceFromUpsideDown = Mathf.Abs(Mathf.DeltaAngle(currentZ, 180f));
-
-        // Normalized: 0 = fully upside-down, 1 = just past 45° threshold
-        float maxDistance = 180f - uprightThreshold;
-        float normalized = Mathf.Clamp01(distanceFromUpsideDown / maxDistance);
-
-        // Smooth ramp for natural feel
-        normalized = Mathf.SmoothStep(0f, 1f, normalized);
-
-        // Interpolate spawn interval
-        return Mathf.Lerp(minSpawnInterval, maxSpawnInterval, normalized);
     }
 }
